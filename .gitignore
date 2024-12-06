@@ -4,4 +4,5 @@ __pycache__
 *.pyd
 *.db
 *.sqlite3
-.env
+.env  # Ignore the .env file containing sensitive data
+.DS_Store
