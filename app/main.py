@@ -1,3 +1,4 @@
+import numpy as np
 from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.db import SessionLocal, init_db
@@ -26,23 +27,45 @@ def process_csv():
     and stores the processed image data in the database.
     """
     init_db()
-    file_path = "data/image_data.csv"
-    df = pd.read_csv(file_path)
+    file_path = "data/image_data.csv"  # Adjust the file path if needed
 
+    # Load the CSV file into a pandas DataFrame
+    try:
+        df = pd.read_csv(file_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading CSV file: {str(e)}")
+
+    # Start a database session
     db = SessionLocal()
     try:
-        with db.begin():  # Start a transaction
+        with db.begin():  # Start a transaction for processing and storing images
             for _, row in df.iterrows():
+                # Extract depth
                 depth = row["depth"]
-                image_array = row.drop("depth").values.reshape(-1, 200)
-                resized_image = resize_image(image_array, 150)
-                colored_image = apply_colormap(resized_image)
 
-                frame = ImageFrame(depth=depth, image_data=colored_image.tobytes())
-                db.add(frame)
+                # Extract image data by dropping the 'depth' column and converting the remaining values into a numpy array
+                image_array = row.drop("depth").values
+                num_pixels = image_array.shape[0]
+
+                # Resize to the desired fixed dimensions (e.g., 150x150)
+                try:
+                    # Resize the image directly to 150x150 using the resize_image function
+                    resized_image = resize_image(image_array, target_height=150, target_width=150)
+
+                    # Apply the color map
+                    colored_image = apply_colormap(resized_image)
+
+                    # Create an ImageFrame object and store in the database
+                    frame = ImageFrame(depth=depth, image_data=colored_image.tobytes())
+                    db.add(frame)
+                except Exception as e:
+                    # Handle image resize or colormap errors without skipping the entire row
+                    print(f"Error processing depth {depth}: {str(e)}")
+                    continue  # Continue processing next frame even if there is an error with this one
+
     except Exception as e:
-        db.rollback()
-        raise e
+        db.rollback()  # Rollback if any error occurs during the transaction
+        raise HTTPException(status_code=500, detail=f"Error processing CSV data: {str(e)}")
     finally:
         db.close()
 
@@ -54,4 +77,5 @@ def get_frames(depth_min: int, depth_max: int, db: Session = Depends(get_db)):
     frames = db.query(ImageFrame).filter(ImageFrame.depth.between(depth_min, depth_max)).all()
     if not frames:
         raise HTTPException(status_code=404, detail="No frames found in the specified range.")
+    
     return [{"depth": frame.depth, "image_data": frame.image_data} for frame in frames]

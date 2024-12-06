@@ -3,6 +3,7 @@ version: "3.9"
 services:
   app:
     build: .
+    restart: always
     ports:
       - "8000:8000"
     environment:
@@ -23,15 +24,5 @@ services:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-  test:
-    build: .
-    command: pytest --maxfail=5 --disable-warnings -q
-    environment:
-      - DATABASE_URL=mysql://root:password@db/mydatabase
-    depends_on:
-      - db
-    volumes:
-      - .:/app
-
 volumes:
   mysql-data:

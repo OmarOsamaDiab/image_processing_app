@@ -1,5 +1,9 @@
-# Use Python 3.10 image as the base
-FROM python:3.10-slim
+FROM python:3.10
+
+# Install system dependencies required for mysqlclient and OpenCV
+RUN apt-get update && \
+    apt-get install -y libmariadb-dev gcc \
+    libgl1-mesa-glx libglib2.0-0
 
 # Set the working directory
 WORKDIR /app
@@ -8,11 +12,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application code
+# Copy the rest of the application files
 COPY . /app
 
-# Expose the application port
+# Expose port for FastAPI
 EXPOSE 8000
 
-# Command to run the application
+# Run the FastAPI app using Uvicorn
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
