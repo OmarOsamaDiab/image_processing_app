@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+sqlalchemy
+mysql-connector-python
+python-dotenv
+pandas
+opencv-python
+pytest
+pytest-sqlalchemy
