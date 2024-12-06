@@ -2,6 +2,11 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.db import SessionLocal, init_db
+from skimage.transform import resize
+from skimage import color
+import matplotlib.pyplot as plt
+from io import BytesIO
+from PIL import Image
 from app.models import ImageFrame
 from app.utils import resize_image, apply_colormap
 import pandas as pd
@@ -38,33 +43,57 @@ def process_csv():
     # Start a database session
     db = SessionLocal()
     try:
-        with db.begin():  # Start a transaction for processing and storing images
+        with db.begin():
             for _, row in df.iterrows():
-                # Extract depth
-                depth = row["depth"]
+                depth = row['depth']  # Get the depth value
+                pixel_values = row[1:].values  # Extract pixel values (columns 1 to 200)
+                
+                # If depth is NaN, replace with default value (e.g., 0)
+                if np.isnan(depth):
+                    print(f"Warning: Found NaN for depth {depth}. Replacing with default value 0.")
+                    depth = 0  # You can replace this with any other value you prefer
 
-                # Extract image data by dropping the 'depth' column and converting the remaining values into a numpy array
-                image_array = row.drop("depth").values
-                num_pixels = image_array.shape[0]
+                # Ensure the pixel values are of correct length (200 in this case)
+                if len(pixel_values) != 200:
+                    print(f"Skipping row due to incorrect number of pixel values (expected 200, got {len(pixel_values)})")
+                    continue  # Skip this row if the number of pixel values is incorrect
 
-                # Resize to the desired fixed dimensions (e.g., 150x150)
+                # Debug: check the first few pixel values
+                print(f"Processing depth {depth} with pixel values:", pixel_values[:10])  # Just print the first 10 pixel values
+
+                # Reshape the pixel values into a 2D array (10x20 image)
                 try:
-                    # Resize the image directly to 150x150 using the resize_image function
-                    resized_image = resize_image(image_array, target_height=150, target_width=150)
+                    image_array = pixel_values.reshape((10, 20))  # Or (20, 10) depending on actual data
+                except ValueError as e:
+                    print(f"Skipping row with depth {depth} due to reshaping error: {e}")
+                    continue  # Skip if reshaping fails
 
-                    # Apply the color map
-                    colored_image = apply_colormap(resized_image)
+                # Check if there are any NaN or infinite values in the image
+                if np.any(np.isnan(image_array)) or np.any(np.isinf(image_array)):
+                    print(f"Warning: NaN or infinite values found in image for depth {depth}. Replacing with default values.")
+                    image_array = np.nan_to_num(image_array, nan=0, posinf=255, neginf=0)  # Replace invalid values
 
-                    # Create an ImageFrame object and store in the database
-                    frame = ImageFrame(depth=depth, image_data=colored_image.tobytes())
-                    db.add(frame)
-                except Exception as e:
-                    # Handle image resize or colormap errors without skipping the entire row
-                    print(f"Error processing depth {depth}: {str(e)}")
-                    continue  # Continue processing next frame even if there is an error with this one
+                # Resize image to width 150 and adjust height to maintain aspect ratio
+                resized_image = resize(image_array, (10, 15), mode='reflect')  # Resize width to 150 pixels
+
+                # Apply custom colormap
+                colored_image = apply_colormap(resized_image)
+
+                # Convert image to bytes (PNG format)
+                pil_image = Image.fromarray((colored_image * 255).astype(np.uint8))  # Convert to PIL image
+                with BytesIO() as byte_io:
+                    pil_image.save(byte_io, format="PNG")
+                    byte_data = byte_io.getvalue()
+
+                # Store image data into the database
+                frame = ImageFrame(depth=depth, image_data=byte_data)
+                db.add(frame)
+
+                # Debug: Print out the stored image depth and check if it's added
+                print(f"Stored frame for depth {depth}.")
 
     except Exception as e:
-        db.rollback()  # Rollback if any error occurs during the transaction
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Error processing CSV data: {str(e)}")
     finally:
         db.close()

@@ -10,3 +10,4 @@ pytest-sqlalchemy
 httpx
 scikit-image
 mysqlclient==2.1.1
+matplotlib>=3.4.0
